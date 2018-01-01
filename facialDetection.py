@@ -6,60 +6,74 @@ CAMERA = cv2.VideoCapture(0)
 FRONT_FACIAL_CLASSIFIER = cv2.CascadeClassifier('haar_frontalface.xml')
 hat = cv2.imread('santahat.png', -1)
 
-def above_face_overlay(frame, x, w, y, h, overlay_t_img):
-  ROI_ABOVE_FACE = frame[max(0, y-h):y, x:x+w]
-  OVERLAYED_ROI = overlay_roi(ROI_ABOVE_FACE, overlay_t_img)
-  frame[max(0, y-h):y, x:x+w] = OVERLAYED_ROI
-  pass
-
-def overlay_roi(roi, overlay_image):
+def overlay(roi, overlay_image):
   # resize the overlay image to fit the ROI target
-  resizedDimensions = (roi.shape[1], roi.shape[0])
-  resizedOverlayDst = cv2.resize(overlay_image, (resizedDimensions), fx=0,fy=0, interpolation=cv2.INTER_NEAREST)
+  resized_dimentions = (roi.shape[1], roi.shape[0])
+  resized_overlay_dst = cv2.resize(overlay_image, (resized_dimentions), fx=0, fy=0, interpolation=cv2.INTER_NEAREST)
 
   # Huge thanks to Dan Masek: https://stackoverflow.com/a/37198079
-  bgrImage = resizedOverlayDst[:,:,:3] # BGR
-  alphaMask1 = resizedOverlayDst[:,:,3:]  # Alpha
-  alphaMask2 = cv2.bitwise_not(alphaMask1) # alphaMask1 + alphaMask2 = [1,1,1,1...]
+  bgr_image = resized_overlay_dst[:,:,:3] # BGR
+  alpha_mask_1 = resized_overlay_dst[:,:,3:]
+  alpha_mask_2 = cv2.bitwise_not(alpha_mask_1) # alpha mask 1 + alpha mask 2 = [1,1,1,1...]
 
-  threeChanAlphaMask1 = cv2.cvtColor(alphaMask1, cv2.COLOR_GRAY2BGR)
-  threeChanAlphaMask2 = cv2.cvtColor(alphaMask2, cv2.COLOR_GRAY2BGR)
+  three_chan_alpha_mask_1 = cv2.cvtColor(alpha_mask_1, cv2.COLOR_GRAY2BGR)
+  three_chan_alpha_mask_2 = cv2.cvtColor(alpha_mask_2, cv2.COLOR_GRAY2BGR)
 
   # Use inverted alpha mask to multiply pixels from background image by pixel of the inverted alphamask
-  # The inverted alpha mask will have 255 set for pixels there is nothing (i.e. the pixel is completely transparent).
-  # As a result, during multiplication, the background pixel will have 100% of the weight (importance) for that pixel
-  backgroundROI = (roi * 1/255.0) * (threeChanAlphaMask2 * 1/255.0)
+  # The inverted alpha mask will have 255 set for pixels where the pixel is completely transparent.
+  # As a result, during multiplication, the background pixel will have 100% of the weight for that pixel
+  background_roi = (roi * 1/255.0) * (three_chan_alpha_mask_2 * 1/255.0)
 
   # Use the alpha mask here so the overlay image will have its transparent pixels equal to zero.
-  # This is useful when we add the foregroundROI and backgroundROI, the correct pixel value from the background
-  # will be used in transparent pixels (alpha=0)
-  foregroundROI = (bgrImage * 1/255.0) * (threeChanAlphaMask1 * 1/255.0)
+  # This is useful when we add the foreground ROI and background ROI together as the correct pixel
+  # value from the background  will be used in transparent pixels (alpha=0)
+  foreground_roi = (bgr_image * 1/255.0) * (three_chan_alpha_mask_1 * 1/255.0)
 
   # TODO: dive deeper into OpenCV's Mat multiplications - does a weird wrap around/average?
-  return cv2.addWeighted(backgroundROI, 255.0, foregroundROI, 255.0, 0.0)
+  return cv2.addWeighted(background_roi, 255.0, foreground_roi, 255.0, 0.0)
 
-while(True):
-  # Capture the frame
-  _, FRAME = CAMERA.read()
+def overlay_img_above_facial_frame(facial_frame, x, w, y, h, overlay_t_img):
+  top_of_frame_coord = max(0, y-h)
+  rightmost_frame_coord = x+w
 
-  # Gray and colored instances of frame
-  GRAY = cv2.cvtColor(FRAME, cv2.COLOR_BGR2GRAY)
-  COLORED_IMAGE= cv2.cvtColor(FRAME, cv2.COLOR_BGRA2BGR)
+  # Squeeze the ROI to fit within screen bounds
+  roi_above_face = facial_frame[top_of_frame_coord:y, x:rightmost_frame_coord]
+  overlayed_roi = overlay(roi_above_face, overlay_t_img)
 
-  # Detect faces
-  rects = FRONT_FACIAL_CLASSIFIER.detectMultiScale(GRAY, scaleFactor=1.3,
-	  minNeighbors=10, minSize=(75, 75))
+  # Overlay
+  facial_frame[top_of_frame_coord:y, x:rightmost_frame_coord] = overlayed_roi
+  pass
 
-  # Draw rectangles around all detected faces - this was taken directly out of the cat detection face toturial
-  for (i, (x, y, w, h)) in enumerate(rects):
-    print('Face at  ' + str(x) + ',' + str(y))
-    # Overlay the hat at target ROI at top of detected rectangle
-    above_face_overlay(COLORED_IMAGE, x, w, y, h, hat)
-  # show the image
-  cv2.imshow('frame', COLORED_IMAGE)
+def get_gray_and_3_chan_colored_frames(frame):
+  return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
-  if cv2.waitKey(1) & 0xFF == ord('q'):
-    break
+def get_face_rects(frame):
+  return FRONT_FACIAL_CLASSIFIER.detectMultiScale(frame, scaleFactor=1.3,
+      minNeighbors=10, minSize=(75, 75))
 
-cameraCapture.release()
-cv2.destroyAllWindows()
+def main():
+  while(True):
+    _, frame = CAMERA.read()
+
+    # Gray and colored instances of frame
+    # Note: COLORED_IMAGE is mutated
+    gray_frame, colored_frame = get_gray_and_3_chan_colored_frames(frame)
+
+    # Detect faces
+    face_rects = get_face_rects(gray_frame)
+
+    # Draw rectangles around all detected faces - this was taken directly out of the cat detection face toturial
+    for (index, (x, y, w, h)) in enumerate(face_rects):
+      print('Face at  ' + str(x) + ',' + str(y))
+      # Overlay the hat at target ROI at top of detected rectangle
+      overlay_img_above_facial_frame(colored_frame, x, w, y, h, hat)
+
+    cv2.imshow('frame', colored_frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+      break
+
+  cameraCapture.release()
+  cv2.destroyAllWindows()
+
+main()
