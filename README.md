@@ -4,6 +4,15 @@
 A little script I cooked up detect face(s) and put Santa hats over them.
 
 
+### To run
+
+First, get OpenCV2.
+Then, run 
+
+`python facialDetectionAndOverlay.py`
+
+
+
 ### Where to get stuff
 The classifier `haar_frontalface.xml` can be found (among with others) on OpenCV's repo: https://github.com/opencv/opencv/tree/master/data/haarcascades.
 More icons (look for PNG) can be found on https://findicons.com
